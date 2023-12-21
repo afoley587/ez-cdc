@@ -1,5 +1,6 @@
 # Learning Tech: DIY Change Data Capture On Localhost
 
+![thumbnail](./images/thumbnail.png)
 Hey there! So, imagine your data is like a lively neighborhood, and every day, 
 new things are happening—new people moving in, kids starting school, and maybe 
 some folks leaving. Now, change data capture (CDC) is like having a super 
@@ -120,14 +121,6 @@ services:
       - OFFSET_STORAGE_TOPIC=cdc_connect_offsets
       - STATUS_STORAGE_TOPIC=cdc_source_connect_statuses
       - BOOTSTRAP_SERVERS=kafka:9092
-      - CONNECT_CONNECTOR_CLASS=io.debezium.connector.postgresql.PostgresConnector
-      - CONNECT_DATABASE_HOSTNAME=database
-      - CONNECT_DATABASE_PORT=5432
-      - CONNECT_DATABASE_USER=cdctest
-      - CONNECT_DATABASE_PASSWORD=cdctest
-      - CONNECT_DATABASE_DNAME=cdctest
-      - CONNECT_TOPIC_PREFIX=cdctest
-      - CONNECT_TABLE_INCLUDE_LIST=customers
     volumes:
       - ./debezium/:/opt/debezium:ro
     networks:
@@ -245,3 +238,102 @@ if you are curious. For now, it is suffice to say that it will:
 1. Connect to our kafka cluster
 2. Consume from the `cdctest.public.customers` topic
 3. Log the changes to the console
+
+We can now start everything up:
+
+```shell
+prompt> docker-compose up -d
+[+] Running 6/0
+ ✔ Network cdc-net                                                                                                                                          Created0.0s 
+ ✔ Container ez-cdc-connect-1                                                                                                                               Created0.0s 
+ ✔ Container ez-cdc-zookeeper-1                                                                                                                             Created0.0s[+] Running 7/7
+ ✔ Network cdc-net                                                                                                                                          Created0.0s 
+ ✔ Container ez-cdc-connect-1                                                                                                                               Created0.0s 
+ ✔ Container ez-cdc-zookeeper-1                                                                                                                             Created0.0s[+] Running 7/7
+ ✔ Network cdc-net                                                                                                                                          Created0.0s 
+ ✔ Container ez-cdc-connect-1                                                                                                                               Created0.0s 
+ ✔ Container ez-cdc-zookeeper-1                                                                                                                             Created0.0s[+] Running 7/7
+ ✔ Network cdc-net                                                                                                                                          Created0.0s 
+ ✔ Container ez-cdc-connect-1                                                                                                                               Started0.0s 
+ ✔ Container ez-cdc-zookeeper-1                                                                                                                             Created0.0s[+] Running 7/7
+ ✔ Network cdc-net                                                                                                                                          Created0.0s 
+ ✔ Container ez-cdc-connect-1                                                                                                                               Started0.0s 
+ ✔ Container ez-cdc-zookeeper-1                                                                                                                             Started0.0s[+] Running 7/7
+ ✔ Network cdc-net                                                                                                                                          Created0.0s 
+ ✔ Container ez-cdc-connect-1                                                                                                                               Started0.0s 
+ ✔ Container ez-cdc-zookeeper-1                                                                                                                             Started0.0s 
+ ✔ Container ez-cdc-database-1                                                                                                                              Started0.0s 
+ ✔ Container ez-cdc-kafka-1                                                                                                                                 Started0.0s 
+ ✔ Container ez-cdc-app-1                                                                                                                                   Started0.0s 
+
+prompt> docker-compose ps
+NAME                 IMAGE                           COMMAND                  SERVICE     CREATED          STATUS          PORTS
+ez-cdc-app-1         py-consumer                     "python main.py"         app         56 seconds ago   Up 55 seconds   
+ez-cdc-connect-1     debezium/connect:2.4            "/docker-entrypoint.…"   connect     56 seconds ago   Up 55 seconds   8083/tcp, 8778/tcp, 9092/tcp
+ez-cdc-database-1    postgres:14                     "docker-entrypoint.s…"   database    56 seconds ago   Up 55 seconds   0.0.0.0:55432->5432/tcp
+ez-cdc-kafka-1       wurstmeister/kafka:latest       "start-kafka.sh"         kafka       56 seconds ago   Up 55 seconds   
+ez-cdc-zookeeper-1   wurstmeister/zookeeper:latest   "/bin/sh -c '/usr/sb…"   zookeeper   56 seconds ago   Up 55 seconds   22/tcp, 2181/tcp, 2888/tcp, 3888/tcp
+```
+
+## Setting Up Our Connector
+Let's go and setup our connector. We will do that by execing in to the `connect`
+container and running a simple cURL command: 
+
+```shell
+prompt> docker-compose exec connect bash
+[kafka@eefc386d2cd3 ~]$ curl -i -X POST -H "Accept:application/json" -H "Content-Type:application/json" localhost:8083/connectors/ -d @/opt/debezium/customers_conf.json
+HTTP/1.1 201 Created
+Date: Thu, 21 Dec 2023 13:44:21 GMT
+Location: http://localhost:8083/connectors/customer-cdc
+Content-Type: application/json
+Content-Length: 415
+Server: Jetty(9.4.51.v20230217)
+
+{"name":"customer-cdc","config":{"connector.class":"io.debezium.connector.postgresql.PostgresConnector","database.hostname":"database","database.port":"5432","database.user":"cdctest","database.password":"cdctest","database.dbname":"cdctest","database.server.name":"cdctest","topic.prefix":"cdctest","table.include.list":"public.customers","plugin.name":"pgoutput","name":"customer-cdc"},"tasks":[],"type":"source"}
+[kafka@eefc386d2cd3 ~]$ 
+```
+
+Now, let's go insert some data into our database:
+
+```shell
+prompt> export PGHOST=localhost
+prompt> export PGPORT=55432
+prompt> export PGUSER=cdctest
+prompt> export PGPASSWORD=cdctest
+prompt> psql
+psql (14.7 (Homebrew), server 14.10 (Debian 14.10-1.pgdg120+1))
+Type "help" for help.
+
+cdctest=# insert into customers (first_name, last_name, email) VALUES ('alex', 'foley', 'alex.foley');
+INSERT 0 1
+cdctest=# insert into customers (first_name, last_name, email) VALUES ('john', 'doe', 'john.doe');
+INSERT 0 1
+cdctest=# select * from customers;
+ id | first_name | last_name |   email    
+----+------------+-----------+------------
+  1 | alex       | foley     | alex.foley
+  2 | john       | doe       | john.doe
+(2 rows)
+
+cdctest=# 
+```
+
+Now, let's look at the logs of our python app:
+
+```shell
+prompt> docker-compose logs app
+app-1  | Unable connect to "kafka:9092": [Errno 111] Connect call failed ('172.26.0.2', 9092)
+app-1  | 2023-12-21 13:42:19.877 | ERROR    | __main__:consume:29 - Would not connect... sleeping
+app-1  | Unable connect to "kafka:9092": [Errno 111] Connect call failed ('172.26.0.2', 9092)
+app-1  | 2023-12-21 13:42:20.878 | ERROR    | __main__:consume:29 - Would not connect... sleeping
+app-1  | Unable connect to "kafka:9092": [Errno 111] Connect call failed ('172.26.0.2', 9092)
+app-1  | 2023-12-21 13:42:21.881 | ERROR    | __main__:consume:29 - Would not connect... sleeping
+app-1  | 2023-12-21 13:46:28.744 | INFO     | __main__:consume:47 - consumed: value={'schema': {'type': 'struct', 'fields': [{'type': 'struct', 'fields': [{'type': 'int32', 'optional': False, 'default': 0, 'field': 'id'}, {'type': 'string', 'optional': True, 'field': 'first_name'}, {'type': 'string', 'optional': True, 'field': 'last_name'}, {'type': 'string', 'optional': True, 'field': 'email'}], 'optional': True, 'name': 'cdctest.public.customers.Value', 'field': 'before'}, {'type': 'struct', 'fields': [{'type': 'int32', 'optional': False, 'default': 0, 'field': 'id'}, {'type': 'string', 'optional': True, 'field': 'first_name'}, {'type': 'string', 'optional': True, 'field': 'last_name'}, {'type': 'string', 'optional': True, 'field': 'email'}], 'optional': True, 'name': 'cdctest.public.customers.Value', 'field': 'after'}, {'type': 'struct', 'fields': [{'type': 'string', 'optional': False, 'field': 'version'}, {'type': 'string', 'optional': False, 'field': 'connector'}, {'type': 'string', 'optional': False, 'field': 'name'}, {'type': 'int64', 'optional': False, 'field': 'ts_ms'}, {'type': 'string', 'optional': True, 'name': 'io.debezium.data.Enum', 'version': 1, 'parameters': {'allowed': 'true,last,false,incremental'}, 'default': 'false', 'field': 'snapshot'}, {'type': 'string', 'optional': False, 'field': 'db'}, {'type': 'string', 'optional': True, 'field': 'sequence'}, {'type': 'string', 'optional': False, 'field': 'schema'}, {'type': 'string', 'optional': False, 'field': 'table'}, {'type': 'int64', 'optional': True, 'field': 'txId'}, {'type': 'int64', 'optional': True, 'field': 'lsn'}, {'type': 'int64', 'optional': True, 'field': 'xmin'}], 'optional': False, 'name': 'io.debezium.connector.postgresql.Source', 'field': 'source'}, {'type': 'string', 'optional': False, 'field': 'op'}, {'type': 'int64', 'optional': True, 'field': 'ts_ms'}, {'type': 'struct', 'fields': [{'type': 'string', 'optional': False, 'field': 'id'}, {'type': 'int64', 'optional': False, 'field': 'total_order'}, {'type': 'int64', 'optional': False, 'field': 'data_collection_order'}], 'optional': True, 'name': 'event.block', 'version': 1, 'field': 'transaction'}], 'optional': False, 'name': 'cdctest.public.customers.Envelope', 'version': 1}, 'payload': {'before': None, 'after': {'id': 1, 'first_name': 'alex', 'last_name': 'foley', 'email': 'alex.foley'}, 'source': {'version': '2.4.2.Final', 'connector': 'postgresql', 'name': 'cdctest', 'ts_ms': 1703166387948, 'snapshot': 'false', 'db': 'cdctest', 'sequence': '[null,"24284336"]', 'schema': 'public', 'table': 'customers', 'txId': 739, 'lsn': 24284336, 'xmin': None}, 'op': 'c', 'ts_ms': 1703166388457, 'transaction': None}} timestamp=1703166388741
+app-1  | 2023-12-21 13:46:42.821 | INFO     | __main__:consume:47 - consumed: value={'schema': {'type': 'struct', 'fields': [{'type': 'struct', 'fields': [{'type': 'int32', 'optional': False, 'default': 0, 'field': 'id'}, {'type': 'string', 'optional': True, 'field': 'first_name'}, {'type': 'string', 'optional': True, 'field': 'last_name'}, {'type': 'string', 'optional': True, 'field': 'email'}], 'optional': True, 'name': 'cdctest.public.customers.Value', 'field': 'before'}, {'type': 'struct', 'fields': [{'type': 'int32', 'optional': False, 'default': 0, 'field': 'id'}, {'type': 'string', 'optional': True, 'field': 'first_name'}, {'type': 'string', 'optional': True, 'field': 'last_name'}, {'type': 'string', 'optional': True, 'field': 'email'}], 'optional': True, 'name': 'cdctest.public.customers.Value', 'field': 'after'}, {'type': 'struct', 'fields': [{'type': 'string', 'optional': False, 'field': 'version'}, {'type': 'string', 'optional': False, 'field': 'connector'}, {'type': 'string', 'optional': False, 'field': 'name'}, {'type': 'int64', 'optional': False, 'field': 'ts_ms'}, {'type': 'string', 'optional': True, 'name': 'io.debezium.data.Enum', 'version': 1, 'parameters': {'allowed': 'true,last,false,incremental'}, 'default': 'false', 'field': 'snapshot'}, {'type': 'string', 'optional': False, 'field': 'db'}, {'type': 'string', 'optional': True, 'field': 'sequence'}, {'type': 'string', 'optional': False, 'field': 'schema'}, {'type': 'string', 'optional': False, 'field': 'table'}, {'type': 'int64', 'optional': True, 'field': 'txId'}, {'type': 'int64', 'optional': True, 'field': 'lsn'}, {'type': 'int64', 'optional': True, 'field': 'xmin'}], 'optional': False, 'name': 'io.debezium.connector.postgresql.Source', 'field': 'source'}, {'type': 'string', 'optional': False, 'field': 'op'}, {'type': 'int64', 'optional': True, 'field': 'ts_ms'}, {'type': 'struct', 'fields': [{'type': 'string', 'optional': False, 'field': 'id'}, {'type': 'int64', 'optional': False, 'field': 'total_order'}, {'type': 'int64', 'optional': False, 'field': 'data_collection_order'}], 'optional': True, 'name': 'event.block', 'version': 1, 'field': 'transaction'}], 'optional': False, 'name': 'cdctest.public.customers.Envelope', 'version': 1}, 'payload': {'before': None, 'after': {'id': 2, 'first_name': 'john', 'last_name': 'doe', 'email': 'john.doe'}, 'source': {'version': '2.4.2.Final', 'connector': 'postgresql', 'name': 'cdctest', 'ts_ms': 1703166402653, 'snapshot': 'false', 'db': 'cdctest', 'sequence': '["24284632","24284688"]', 'schema': 'public', 'table': 'customers', 'txId': 740, 'lsn': 24284688, 'xmin': None}, 'op': 'c', 'ts_ms': 1703166402765, 'transaction': None}} timestamp=1703166402803
+prompt> 
+```
+
+Whoa! Look at that! Our two test users flowed into our python app in almost real time!
+
+Here's a video representation below so its easier to see!
+![Demo](./images/demo.gif)

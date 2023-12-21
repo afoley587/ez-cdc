@@ -48,14 +48,6 @@ services:
       - OFFSET_STORAGE_TOPIC=cdc_connect_offsets
       - STATUS_STORAGE_TOPIC=cdc_source_connect_statuses
       - BOOTSTRAP_SERVERS=kafka:9092
-      - CONNECT_CONNECTOR_CLASS=io.debezium.connector.postgresql.PostgresConnector
-      - CONNECT_DATABASE_HOSTNAME=database
-      - CONNECT_DATABASE_PORT=5432
-      - CONNECT_DATABASE_USER=cdctest
-      - CONNECT_DATABASE_PASSWORD=cdctest
-      - CONNECT_DATABASE_DNAME=cdctest
-      - CONNECT_TOPIC_PREFIX=cdctest
-      - CONNECT_TABLE_INCLUDE_LIST=customers
     volumes:
       - ./debezium/:/opt/debezium:ro
     networks:
