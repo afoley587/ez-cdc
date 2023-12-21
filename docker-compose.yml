@@ -1,0 +1,80 @@
+version: '3.7'
+services:
+  database:
+    image: postgres:14
+    environment:
+      - POSTGRES_DATABASE=cdctest
+      - POSTGRES_USER=cdctest
+      - POSTGRES_PASSWORD=cdctest
+    command: 
+      # Settings for debezium, at a minimum, 
+      # is to enable wal_level=logical
+      - postgres 
+      - -c 
+      - wal_level=logical 
+      - -c 
+      - max_wal_senders=10 
+      - -c 
+      - max_replication_slots=10 
+    ports:
+      - 55432:5432
+    networks:
+      - cdc-net
+    volumes:
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+
+  # We can create the connector with the REST API:
+  # curl -i -X POST -H "Accept:application/json" -H "Content-Type:application/json" localhost:8083/connectors/ -d @/opt/debezium/customers_conf.json
+  connect:
+    image: debezium/connect:2.4
+    environment:
+      - GROUP_ID=1
+      - CONFIG_STORAGE_TOPIC=cdc_connect_configs
+      - OFFSET_STORAGE_TOPIC=cdc_connect_offsets
+      - STATUS_STORAGE_TOPIC=cdc_source_connect_statuses
+      - BOOTSTRAP_SERVERS=kafka:9092
+      - CONNECT_CONNECTOR_CLASS=io.debezium.connector.postgresql.PostgresConnector
+      - CONNECT_DATABASE_HOSTNAME=database
+      - CONNECT_DATABASE_PORT=5432
+      - CONNECT_DATABASE_USER=cdctest
+      - CONNECT_DATABASE_PASSWORD=cdctest
+      - CONNECT_DATABASE_DNAME=cdctest
+      - CONNECT_TOPIC_PREFIX=cdctest
+      - CONNECT_TABLE_INCLUDE_LIST=customers
+    volumes:
+      - ./debezium/:/opt/debezium:ro
+    networks:
+      - cdc-net
+
+  zookeeper:
+    image: wurstmeister/zookeeper:latest
+    networks:
+      - cdc-net
+
+  kafka:
+    image: wurstmeister/kafka:latest
+    environment:
+      KAFKA_ADVERTISED_HOST_NAME: kafka
+      KAFKA_ADVERTISED_PORT: 9092
+      KAFKA_CREATE_TOPICS: "cdctest.customers:1:1"
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+    networks:
+      - cdc-net
+
+  app:
+    # kafka-console-consumer.sh --topic cdctest.public.customers --bootstrap-server kafka:9092
+    image: py-consumer
+    build:
+      context: ./python
+    environment:
+      - KAFKA_CDC_TOPIC=cdctest.public.customers
+      - KAFKA_CDC_BOOTSTRAP_SERVERS=kafka:9092
+    depends_on:
+      - kafka
+    networks:
+      - cdc-net
+
+networks:
+  cdc-net:
+    external: false
+    name: cdc-net

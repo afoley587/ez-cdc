@@ -1,0 +1,15 @@
+{
+	"name": "customer-cdc",
+	"config": {
+		"connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+		"database.hostname": "database",
+		"database.port": "5432",
+		"database.user": "cdctest",
+		"database.password": "cdctest",
+		"database.dbname": "cdctest",
+		"database.server.name": "cdctest",
+        "topic.prefix": "cdctest",
+		"table.include.list": "public.customers",
+        "plugin.name": "pgoutput"
+	}
+}
