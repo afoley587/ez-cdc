@@ -23,6 +23,21 @@ services:
     volumes:
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql
 
+  zookeeper:
+    image: wurstmeister/zookeeper:latest
+    networks:
+      - cdc-net
+
+  kafka:
+    image: wurstmeister/kafka:latest
+    environment:
+      - KAFKA_ADVERTISED_HOST_NAME=kafka
+      - KAFKA_ADVERTISED_PORT=9092
+      - KAFKA_CREATE_TOPICS=cdctest.public.customers:1:1
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+    networks:
+      - cdc-net
+
   # We can create the connector with the REST API:
   # curl -i -X POST -H "Accept:application/json" -H "Content-Type:application/json" localhost:8083/connectors/ -d @/opt/debezium/customers_conf.json
   connect:
@@ -43,21 +58,6 @@ services:
       - CONNECT_TABLE_INCLUDE_LIST=customers
     volumes:
       - ./debezium/:/opt/debezium:ro
-    networks:
-      - cdc-net
-
-  zookeeper:
-    image: wurstmeister/zookeeper:latest
-    networks:
-      - cdc-net
-
-  kafka:
-    image: wurstmeister/kafka:latest
-    environment:
-      KAFKA_ADVERTISED_HOST_NAME: kafka
-      KAFKA_ADVERTISED_PORT: 9092
-      KAFKA_CREATE_TOPICS: "cdctest.customers:1:1"
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
     networks:
       - cdc-net
 
